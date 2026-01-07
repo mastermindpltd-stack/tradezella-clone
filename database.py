@@ -1,8 +1,3 @@
-import sqlite3
-
-def get_connection():
-    return sqlite3.connect("trades.db", check_same_thread=False)
-
 def create_table():
     conn = get_connection()
     c = conn.cursor()
@@ -16,7 +11,9 @@ def create_table():
         entry REAL,
         stoploss REAL,
         takeprofit REAL,
-        lot REAL
+        lot REAL,
+        screenshot TEXT,
+        notes TEXT
     )
     """)
 
