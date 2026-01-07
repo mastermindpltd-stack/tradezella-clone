@@ -84,6 +84,33 @@ if uploaded_file is not None:
         st.error(f"CSV must contain columns: {required_cols}")
     else:
         st.success("CSV format looks good ✅")
+        if uploaded_file is not None and st.button("🚀 Import Trades"):
+    conn = get_connection()
+
+    for _, row in csv_df.iterrows():
+        conn.execute(
+            """
+            INSERT INTO trades
+            (username, pair, direction, entry, stoploss, takeprofit, lot)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                username,
+                row["pair"],
+                row["direction"],
+                float(row["entry"]),
+                float(row["stoploss"]),
+                float(row["takeprofit"]),
+                float(row["lot"])
+            )
+        )
+
+    conn.commit()
+    conn.close()
+
+    st.success(f"✅ Imported {len(csv_df)} trades successfully")
+    st.experimental_rerun()
+
 
 st.sidebar.markdown("## 📘 Trade Journal")
 st.sidebar.caption("TradeZella-style analytics")
@@ -254,5 +281,6 @@ elif page == "Analytics":
         .reset_index()
     )
     st.dataframe(pair_stats, use_container_width=True)
+
 
 
