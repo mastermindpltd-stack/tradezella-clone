@@ -66,6 +66,13 @@ authenticator.logout("Logout", "sidebar")
 # -------------------------------------------------
 # SIDEBAR NAV
 # -------------------------------------------------
+st.sidebar.markdown("## 📥 Import Trades (CSV)")
+
+uploaded_file = st.sidebar.file_uploader(
+    "Upload CSV",
+    type=["csv"]
+)
+
 st.sidebar.markdown("## 📘 Trade Journal")
 st.sidebar.caption("TradeZella-style analytics")
 st.sidebar.markdown("---")
@@ -235,3 +242,4 @@ elif page == "Analytics":
         .reset_index()
     )
     st.dataframe(pair_stats, use_container_width=True)
+
