@@ -24,7 +24,7 @@ html, body, [class*="css"] {
 }
 .card {
     background: linear-gradient(145deg, #161b22, #0e1117);
-    padding: 20px;
+    padding: 18px;
     border-radius: 14px;
     box-shadow: 0 6px 20px rgba(0,0,0,0.4);
 }
@@ -68,26 +68,33 @@ page = st.sidebar.radio("Navigate", ["Dashboard", "Trades", "Analytics"])
 create_table()
 
 # -------------------------------------------------
-# CSV IMPORT (SAFE + ERROR FREE)
+# CSV IMPORT WITH COLUMN MAPPING (SAFE)
 # -------------------------------------------------
-st.sidebar.markdown("### 📥 Import CSV")
-
+st.sidebar.markdown("### 📥 Import Trades (CSV)")
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file is not None:
     csv_df = pd.read_csv(uploaded_file)
 
-    st.subheader("CSV Preview")
+    st.subheader("📄 CSV Preview")
     st.dataframe(csv_df.head(), use_container_width=True)
 
-    required_cols = {"pair", "direction", "entry", "stoploss", "takeprofit", "lot"}
+    st.markdown("### 🧩 Map CSV Columns")
 
-    if not required_cols.issubset(csv_df.columns):
-        st.error(f"CSV must contain columns: {required_cols}")
-    else:
-        if st.button("Import Trades"):
-            conn = get_connection()
-            for _, row in csv_df.iterrows():
+    pair_col = st.selectbox("Pair", csv_df.columns)
+    direction_col = st.selectbox("Direction", csv_df.columns)
+    entry_col = st.selectbox("Entry Price", csv_df.columns)
+    stoploss_col = st.selectbox("Stop Loss", csv_df.columns)
+    takeprofit_col = st.selectbox("Take Profit", csv_df.columns)
+    lot_col = st.selectbox("Lot Size", csv_df.columns)
+
+    if st.button("🚀 Import Trades"):
+        conn = get_connection()
+        imported = 0
+        skipped = 0
+
+        for _, row in csv_df.iterrows():
+            try:
                 conn.execute(
                     """
                     INSERT INTO trades
@@ -96,18 +103,26 @@ if uploaded_file is not None:
                     """,
                     (
                         username,
-                        row["pair"],
-                        row["direction"],
-                        float(row["entry"]),
-                        float(row["stoploss"]),
-                        float(row["takeprofit"]),
-                        float(row["lot"])
+                        str(row[pair_col]),
+                        str(row[direction_col]).capitalize(),
+                        float(row[entry_col]),
+                        float(row[stoploss_col]) if pd.notna(row[stoploss_col]) else 0,
+                        float(row[takeprofit_col]) if pd.notna(row[takeprofit_col]) else 0,
+                        float(row[lot_col])
                     )
                 )
-            conn.commit()
-            conn.close()
-            st.success(f"Imported {len(csv_df)} trades")
-            st.experimental_rerun()
+                imported += 1
+            except Exception:
+                skipped += 1
+
+        conn.commit()
+        conn.close()
+
+        st.success(f"✅ Imported {imported} trades")
+        if skipped > 0:
+            st.warning(f"⚠️ Skipped {skipped} invalid rows")
+
+        st.experimental_rerun()
 
 # -------------------------------------------------
 # ADD TRADE (MANUAL)
