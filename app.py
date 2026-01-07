@@ -13,7 +13,7 @@ from database import create_table, get_connection
 st.set_page_config(page_title="Trade Journal", layout="wide")
 
 # -------------------------------------------------
-# UPLOAD FOLDER (VERY IMPORTANT)
+# UPLOAD FOLDER (CRITICAL)
 # -------------------------------------------------
 UPLOAD_DIR = "uploads/screenshots"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -27,23 +27,12 @@ st.markdown("""
 html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
 }
-.stApp {
-    background-color: #0e1117;
-}
+.stApp { background-color: #0e1117; }
 .card {
     background: linear-gradient(145deg, #161b22, #0e1117);
     padding: 18px;
     border-radius: 14px;
     box-shadow: 0 6px 20px rgba(0,0,0,0.4);
-}
-.card-title {
-    color: #8b949e;
-    font-size: 13px;
-}
-.card-value {
-    color: #58a6ff;
-    font-size: 26px;
-    font-weight: 700;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -65,7 +54,7 @@ authenticator.logout("Logout", "sidebar")
 st.sidebar.success(f"Welcome {name}")
 
 # -------------------------------------------------
-# SIDEBAR NAV
+# NAVIGATION
 # -------------------------------------------------
 st.sidebar.markdown("## 📘 Trade Journal")
 page = st.sidebar.radio("Navigate", ["Dashboard", "Trades", "Analytics"])
@@ -78,13 +67,13 @@ create_table()
 # -------------------------------------------------
 # CSV IMPORT WITH COLUMN MAPPING
 # -------------------------------------------------
-st.sidebar.markdown("### 📥 Import Trades (CSV)")
+st.sidebar.markdown("### 📥 Import CSV")
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file is not None:
     csv_df = pd.read_csv(uploaded_file)
 
-    st.subheader("📄 CSV Preview")
+    st.subheader("CSV Preview")
     st.dataframe(csv_df.head(), use_container_width=True)
 
     st.markdown("### 🧩 Map CSV Columns")
@@ -123,14 +112,14 @@ if uploaded_file is not None:
 
         conn.commit()
         conn.close()
+
         st.success(f"Imported {imported} trades")
         if skipped:
             st.warning(f"Skipped {skipped} rows")
-
-        st.experimental_rerun()
+        st.rerun()
 
 # -------------------------------------------------
-# MANUAL TRADE ADD
+# MANUAL ADD TRADE
 # -------------------------------------------------
 with st.expander("➕ Add Trade"):
     with st.form("trade_form"):
@@ -160,10 +149,10 @@ with st.expander("➕ Add Trade"):
         conn.commit()
         conn.close()
         st.success("Trade saved")
-        st.experimental_rerun()
+        st.rerun()
 
 # -------------------------------------------------
-# LOAD USER TRADES
+# LOAD TRADES
 # -------------------------------------------------
 conn = get_connection()
 df = pd.read_sql(
@@ -178,18 +167,18 @@ if df.empty:
     st.stop()
 
 # -------------------------------------------------
-# CALCULATIONS
+# CALCULATIONS (FIXED)
 # -------------------------------------------------
 df["PnL"] = df.apply(
-    lambda x:
-    (x["takeprofit"] - x["entry"]) * x["lot"]
-    if x["direction"] == "Buy"
-    else (x["entry"] - x["takeprofit"]) * x["lot"],
+    lambda r:
+    (r["takeprofit"] - r["entry"]) * r["lot"]
+    if r["direction"] == "Buy"
+    else (r["entry"] - r["takeprofit"]) * r["lot"],
     axis=1
 )
 
-df["Risk"] = abs(df["entry"] - x["stoploss"]) * df["lot"] if "stoploss" in df else 0
-df["Reward"] = abs(df["takeprofit"] - df["entry"]) * df["lot"]
+df["Risk"] = (df["entry"] - df["stoploss"]).abs() * df["lot"]
+df["Reward"] = (df["takeprofit"] - df["entry"]).abs() * df["lot"]
 df["RR"] = (df["Reward"] / df["Risk"]).round(2)
 
 df["Equity"] = df["PnL"].cumsum()
@@ -229,21 +218,15 @@ elif page == "Trades":
 
     st.markdown("## 📸 Screenshot Review")
 
-    trade_ids = df["id"].tolist()
-    selected_trade = st.selectbox("Select Trade ID", trade_ids)
-
-    uploaded_img = st.file_uploader(
-        "Upload TradingView Screenshot",
-        type=["png","jpg","jpeg"]
-    )
-
-    notes = st.text_area("Trade Notes / Review")
+    trade_id = st.selectbox("Select Trade ID", df["id"].tolist())
+    uploaded_img = st.file_uploader("Upload Screenshot", type=["png","jpg","jpeg"])
+    notes = st.text_area("Trade Notes")
 
     if st.button("💾 Save Screenshot"):
         if uploaded_img is None:
-            st.error("Upload image first")
+            st.error("Please upload an image")
         else:
-            filename = f"{username}_{selected_trade}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+            filename = f"{username}_{trade_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
             filepath = os.path.join(UPLOAD_DIR, filename)
 
             with open(filepath, "wb") as f:
@@ -251,36 +234,30 @@ elif page == "Trades":
 
             conn = get_connection()
             conn.execute(
-                """
-                UPDATE trades
-                SET screenshot = ?, notes = ?
-                WHERE id = ?
-                """,
-                (filepath, notes, selected_trade)
+                "UPDATE trades SET screenshot = ?, notes = ? WHERE id = ?",
+                (filepath, notes, trade_id)
             )
             conn.commit()
             conn.close()
 
             st.success("Screenshot saved")
-            st.experimental_rerun()
+            st.rerun()
 
-    review_trade = df[df["id"] == selected_trade].iloc[0]
-
-    if review_trade["screenshot"]:
-        st.image(review_trade["screenshot"], use_column_width=True)
-
-    if review_trade["notes"]:
-        st.info(review_trade["notes"])
+    review = df[df["id"] == trade_id].iloc[0]
+    if review["screenshot"]:
+        st.image(review["screenshot"], use_column_width=True)
+    if review["notes"]:
+        st.info(review["notes"])
 
 # -------------------------------------------------
 # ANALYTICS
 # -------------------------------------------------
 elif page == "Analytics":
     st.markdown("## Analytics")
-    dd_fig = px.area(df, y="Drawdown")
-    dd_fig.update_layout(
+    fig = px.area(df, y="Drawdown")
+    fig.update_layout(
         plot_bgcolor="#0e1117",
         paper_bgcolor="#0e1117",
         font_color="#c9d1d9"
     )
-    st.plotly_chart(dd_fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
