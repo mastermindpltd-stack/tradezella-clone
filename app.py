@@ -1,11 +1,8 @@
-import os
-
-UPLOAD_DIR = "uploads/screenshots"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import os
+from datetime import datetime
 
 from auth import get_authenticator
 from database import create_table, get_connection
@@ -14,6 +11,12 @@ from database import create_table, get_connection
 # PAGE CONFIG
 # -------------------------------------------------
 st.set_page_config(page_title="Trade Journal", layout="wide")
+
+# -------------------------------------------------
+# UPLOAD FOLDER (VERY IMPORTANT)
+# -------------------------------------------------
+UPLOAD_DIR = "uploads/screenshots"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # -------------------------------------------------
 # GLOBAL DARK UI
@@ -73,7 +76,7 @@ page = st.sidebar.radio("Navigate", ["Dashboard", "Trades", "Analytics"])
 create_table()
 
 # -------------------------------------------------
-# CSV IMPORT WITH COLUMN MAPPING (SAFE)
+# CSV IMPORT WITH COLUMN MAPPING
 # -------------------------------------------------
 st.sidebar.markdown("### 📥 Import Trades (CSV)")
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
@@ -85,18 +88,16 @@ if uploaded_file is not None:
     st.dataframe(csv_df.head(), use_container_width=True)
 
     st.markdown("### 🧩 Map CSV Columns")
-
     pair_col = st.selectbox("Pair", csv_df.columns)
     direction_col = st.selectbox("Direction", csv_df.columns)
-    entry_col = st.selectbox("Entry Price", csv_df.columns)
-    stoploss_col = st.selectbox("Stop Loss", csv_df.columns)
-    takeprofit_col = st.selectbox("Take Profit", csv_df.columns)
-    lot_col = st.selectbox("Lot Size", csv_df.columns)
+    entry_col = st.selectbox("Entry", csv_df.columns)
+    stoploss_col = st.selectbox("Stoploss", csv_df.columns)
+    takeprofit_col = st.selectbox("Takeprofit", csv_df.columns)
+    lot_col = st.selectbox("Lot", csv_df.columns)
 
     if st.button("🚀 Import Trades"):
         conn = get_connection()
-        imported = 0
-        skipped = 0
+        imported, skipped = 0, 0
 
         for _, row in csv_df.iterrows():
             try:
@@ -122,15 +123,14 @@ if uploaded_file is not None:
 
         conn.commit()
         conn.close()
+        st.success(f"Imported {imported} trades")
+        if skipped:
+            st.warning(f"Skipped {skipped} rows")
 
-        st.success(f"✅ Imported {imported} trades")
-        if skipped > 0:
-            st.warning(f"⚠️ Skipped {skipped} invalid rows")
-
-        st.rerun()
+        st.experimental_rerun()
 
 # -------------------------------------------------
-# ADD TRADE (MANUAL)
+# MANUAL TRADE ADD
 # -------------------------------------------------
 with st.expander("➕ Add Trade"):
     with st.form("trade_form"):
@@ -140,9 +140,9 @@ with st.expander("➕ Add Trade"):
         c1, c2 = st.columns(2)
         with c1:
             entry = st.number_input("Entry", format="%.5f")
-            stoploss = st.number_input("Stop Loss", format="%.5f")
+            stoploss = st.number_input("Stoploss", format="%.5f")
         with c2:
-            takeprofit = st.number_input("Take Profit", format="%.5f")
+            takeprofit = st.number_input("Takeprofit", format="%.5f")
             lot = st.number_input("Lot Size", min_value=0.01, step=0.01)
 
         submit = st.form_submit_button("Save Trade")
@@ -188,7 +188,7 @@ df["PnL"] = df.apply(
     axis=1
 )
 
-df["Risk"] = abs(df["entry"] - df["stoploss"]) * df["lot"]
+df["Risk"] = abs(df["entry"] - x["stoploss"]) * df["lot"] if "stoploss" in df else 0
 df["Reward"] = abs(df["takeprofit"] - df["entry"]) * df["lot"]
 df["RR"] = (df["Reward"] / df["Risk"]).round(2)
 
@@ -197,34 +197,17 @@ df["Peak"] = df["Equity"].cummax()
 df["Drawdown"] = df["Equity"] - df["Peak"]
 
 # -------------------------------------------------
-# METRICS
-# -------------------------------------------------
-total_trades = len(df)
-win_rate = round((df["PnL"] > 0).mean() * 100, 2)
-avg_rr = round(df["RR"].mean(), 2)
-net_pnl = round(df["PnL"].sum(), 2)
-max_dd = round(df["Drawdown"].min(), 2)
-
-def card(title, value):
-    st.markdown(f"""
-    <div class="card">
-        <div class="card-title">{title}</div>
-        <div class="card-value">{value}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# -------------------------------------------------
 # DASHBOARD
 # -------------------------------------------------
 if page == "Dashboard":
     st.markdown("## Dashboard")
 
     c1,c2,c3,c4,c5 = st.columns(5)
-    with c1: card("Trades", total_trades)
-    with c2: card("Win Rate", f"{win_rate}%")
-    with c3: card("Avg RR", avg_rr)
-    with c4: card("Max DD", max_dd)
-    with c5: card("Net PnL", net_pnl)
+    c1.metric("Trades", len(df))
+    c2.metric("Win Rate", f"{round((df['PnL']>0).mean()*100,2)}%")
+    c3.metric("Avg RR", round(df["RR"].mean(),2))
+    c4.metric("Max DD", round(df["Drawdown"].min(),2))
+    c5.metric("Net PnL", round(df["PnL"].sum(),2))
 
     fig = px.line(df, y="Equity")
     fig.update_traces(line=dict(width=3, color="#58a6ff"))
@@ -238,26 +221,62 @@ if page == "Dashboard":
     st.plotly_chart(fig, use_container_width=True)
 
 # -------------------------------------------------
-# TRADES
+# TRADES + SCREENSHOT UPLOAD
 # -------------------------------------------------
 elif page == "Trades":
     st.markdown("## Trades")
-    st.dataframe(
-        df.style
-        .applymap(
-            lambda v: "color:#00ff9c" if isinstance(v,(int,float)) and v > 0 else "color:#ff5c5c",
-            subset=["PnL"]
-        )
-        .format({"PnL":"{:.2f}", "RR":"{:.2f}"}),
-        use_container_width=True
+    st.dataframe(df, use_container_width=True)
+
+    st.markdown("## 📸 Screenshot Review")
+
+    trade_ids = df["id"].tolist()
+    selected_trade = st.selectbox("Select Trade ID", trade_ids)
+
+    uploaded_img = st.file_uploader(
+        "Upload TradingView Screenshot",
+        type=["png","jpg","jpeg"]
     )
+
+    notes = st.text_area("Trade Notes / Review")
+
+    if st.button("💾 Save Screenshot"):
+        if uploaded_img is None:
+            st.error("Upload image first")
+        else:
+            filename = f"{username}_{selected_trade}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+            filepath = os.path.join(UPLOAD_DIR, filename)
+
+            with open(filepath, "wb") as f:
+                f.write(uploaded_img.getbuffer())
+
+            conn = get_connection()
+            conn.execute(
+                """
+                UPDATE trades
+                SET screenshot = ?, notes = ?
+                WHERE id = ?
+                """,
+                (filepath, notes, selected_trade)
+            )
+            conn.commit()
+            conn.close()
+
+            st.success("Screenshot saved")
+            st.experimental_rerun()
+
+    review_trade = df[df["id"] == selected_trade].iloc[0]
+
+    if review_trade["screenshot"]:
+        st.image(review_trade["screenshot"], use_column_width=True)
+
+    if review_trade["notes"]:
+        st.info(review_trade["notes"])
 
 # -------------------------------------------------
 # ANALYTICS
 # -------------------------------------------------
 elif page == "Analytics":
     st.markdown("## Analytics")
-
     dd_fig = px.area(df, y="Drawdown")
     dd_fig.update_layout(
         plot_bgcolor="#0e1117",
@@ -265,5 +284,3 @@ elif page == "Analytics":
         font_color="#c9d1d9"
     )
     st.plotly_chart(dd_fig, use_container_width=True)
-
-
