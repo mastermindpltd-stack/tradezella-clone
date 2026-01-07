@@ -9,12 +9,12 @@ from database import create_table, get_connection
 # PAGE CONFIG
 # -------------------------------------------------
 st.set_page_config(
-    page_title="TradeZella Clone",
+    page_title="Trade Journal",
     layout="wide"
 )
 
 # -------------------------------------------------
-# GLOBAL DARK THEME + PREMIUM UI
+# GLOBAL PREMIUM THEME (TradeZella-style)
 # -------------------------------------------------
 st.markdown("""
 <style>
@@ -32,18 +32,17 @@ html, body, [class*="css"] {
     background: linear-gradient(145deg, #161b22, #0e1117);
     padding: 22px;
     border-radius: 16px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
-    text-align: left;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
 }
 
 .card-title {
     color: #8b949e;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .card-value {
     color: #58a6ff;
-    font-size: 28px;
+    font-size: 30px;
     font-weight: 700;
 }
 </style>
@@ -53,74 +52,36 @@ html, body, [class*="css"] {
 # LOGIN
 # -------------------------------------------------
 authenticator = get_authenticator()
-name, auth_status, username = authenticator.login("🔐 Login", "main")
+name, auth_status, username = authenticator.login("Login", "main")
 
 if auth_status is False:
-    st.error("❌ Wrong username or password")
+    st.error("Invalid credentials")
     st.stop()
 
 if auth_status is None:
-    st.warning("Please login to continue")
     st.stop()
 
-authenticator.logout("🚪 Logout", "sidebar")
-st.sidebar.success(f"Welcome {name}")
+authenticator.logout("Logout", "sidebar")
 
 # -------------------------------------------------
-# SIDEBAR NAVIGATION
+# SIDEBAR NAV
 # -------------------------------------------------
-st.sidebar.markdown("## 📘 TradeZella Clone")
+st.sidebar.markdown("## 📘 Trade Journal")
+st.sidebar.caption("TradeZella-style analytics")
 st.sidebar.markdown("---")
 
 page = st.sidebar.radio(
-    "Navigate",
+    "Navigation",
     ["Dashboard", "Trades", "Analytics"]
 )
 
 # -------------------------------------------------
-# DATABASE INIT
+# DB INIT
 # -------------------------------------------------
 create_table()
 
 # -------------------------------------------------
-# ADD TRADE FORM (COMMON)
-# -------------------------------------------------
-with st.form("trade_form"):
-    st.subheader("➕ Add New Trade")
-
-    pair = st.selectbox(
-        "Trading Pair",
-        ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD"]
-    )
-
-    direction = st.radio("Direction", ["Buy", "Sell"])
-
-    col1, col2 = st.columns(2)
-    with col1:
-        entry = st.number_input("Entry Price", format="%.5f")
-        stoploss = st.number_input("Stop Loss", format="%.5f")
-
-    with col2:
-        takeprofit = st.number_input("Take Profit", format="%.5f")
-        lot = st.number_input("Lot Size", min_value=0.01, step=0.01)
-
-    submit = st.form_submit_button("💾 Save Trade")
-
-if submit:
-    conn = get_connection()
-    conn.execute(
-        """
-        INSERT INTO trades (username, pair, direction, entry, stoploss, takeprofit, lot)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (username, pair, direction, entry, stoploss, takeprofit, lot)
-    )
-    conn.commit()
-    conn.close()
-    st.success("✅ Trade saved")
-
-# -------------------------------------------------
-# LOAD USER TRADES
+# LOAD USER DATA
 # -------------------------------------------------
 conn = get_connection()
 df = pd.read_sql(
@@ -130,24 +91,62 @@ df = pd.read_sql(
 )
 conn.close()
 
+# -------------------------------------------------
+# ADD TRADE (TOP ACTION – like TradeZella)
+# -------------------------------------------------
+with st.expander("➕ Add Trade", expanded=False):
+    with st.form("trade_form"):
+        pair = st.selectbox("Pair", ["EURUSD","GBPUSD","USDJPY","XAUUSD","BTCUSD"])
+        direction = st.radio("Direction", ["Buy","Sell"], horizontal=True)
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            entry = st.number_input("Entry", format="%.5f")
+            stoploss = st.number_input("Stop Loss", format="%.5f")
+        with c2:
+            takeprofit = st.number_input("Take Profit", format="%.5f")
+            lot = st.number_input("Lot Size", min_value=0.01, step=0.01)
+        with c3:
+            session = st.selectbox("Session", ["London","NY","Asia"])
+            result = st.selectbox("Result", ["Win","Loss"])
+
+        submit = st.form_submit_button("Save Trade")
+
+    if submit:
+        conn = get_connection()
+        conn.execute(
+            """
+            INSERT INTO trades
+            (username,pair,direction,entry,stoploss,takeprofit,lot)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (username,pair,direction,entry,stoploss,takeprofit,lot)
+        )
+        conn.commit()
+        conn.close()
+        st.success("Trade added")
+
+# -------------------------------------------------
+# STOP IF NO DATA
+# -------------------------------------------------
 if df.empty:
-    st.info("No trades added yet")
+    st.info("No trades yet")
     st.stop()
 
 # -------------------------------------------------
-# CALCULATIONS
+# CALCULATIONS (TradeZella-style)
 # -------------------------------------------------
-def calculate_pnl(row):
-    if row["direction"] == "Buy":
-        return (row["takeprofit"] - row["entry"]) * row["lot"]
-    else:
-        return (row["entry"] - row["takeprofit"]) * row["lot"]
+df["PnL"] = df.apply(
+    lambda x:
+    (x["takeprofit"]-x["entry"])*x["lot"]
+    if x["direction"]=="Buy"
+    else (x["entry"]-x["takeprofit"])*x["lot"],
+    axis=1
+)
 
-df["PnL"] = df.apply(calculate_pnl, axis=1)
 df["Risk"] = abs(df["entry"] - df["stoploss"]) * df["lot"]
 df["Reward"] = abs(df["takeprofit"] - df["entry"]) * df["lot"]
-df["RR"] = df.apply(lambda x: round(x["Reward"] / x["Risk"], 2) if x["Risk"] != 0 else 0, axis=1)
-
+df["RR"] = (df["Reward"] / df["Risk"]).round(2)
 df["Equity"] = df["PnL"].cumsum()
 df["Peak"] = df["Equity"].cummax()
 df["Drawdown"] = df["Equity"] - df["Peak"]
@@ -155,14 +154,13 @@ df["Drawdown"] = df["Equity"] - df["Peak"]
 # -------------------------------------------------
 # METRICS
 # -------------------------------------------------
-total_trades = len(df)
-wins = len(df[df["PnL"] > 0])
-win_rate = round((wins / total_trades) * 100, 2)
-avg_rr = round(df["RR"].mean(), 2)
-max_dd = round(df["Drawdown"].min(), 2)
-net_pnl = round(df["PnL"].sum(), 2)
+total = len(df)
+winrate = round((df["PnL"]>0).mean()*100,2)
+avg_rr = round(df["RR"].mean(),2)
+net_pnl = round(df["PnL"].sum(),2)
+max_dd = round(df["Drawdown"].min(),2)
 
-def card(title, value):
+def metric(title,value):
     st.markdown(f"""
     <div class="card">
         <div class="card-title">{title}</div>
@@ -174,65 +172,65 @@ def card(title, value):
 # DASHBOARD
 # -------------------------------------------------
 if page == "Dashboard":
-    st.markdown("## 📊 Performance Overview")
-    st.markdown("---")
+    st.markdown("## Dashboard")
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: card("Total Trades", total_trades)
-    with c2: card("Win Rate", f"{win_rate}%")
-    with c3: card("Avg RR", avg_rr)
-    with c4: card("Max DD", max_dd)
-    with c5: card("Net PnL", net_pnl)
+    c1,c2,c3,c4,c5 = st.columns(5)
+    with c1: metric("Trades", total)
+    with c2: metric("Win Rate", f"{winrate}%")
+    with c3: metric("Avg RR", avg_rr)
+    with c4: metric("Max DD", max_dd)
+    with c5: metric("Net PnL", net_pnl)
 
-    st.markdown("### 📈 Equity Curve")
+    st.markdown("### Equity Curve")
+
     fig = px.line(df, y="Equity")
+    fig.update_traces(line=dict(width=3,color="#58a6ff"))
     fig.update_layout(
+        height=420,
         plot_bgcolor="#0e1117",
         paper_bgcolor="#0e1117",
-        font_color="#c9d1d9"
+        font_color="#c9d1d9",
+        xaxis=dict(showgrid=False,showticklabels=False),
+        yaxis=dict(gridcolor="#21262d")
     )
     st.plotly_chart(fig, use_container_width=True)
 
 # -------------------------------------------------
-# TRADES PAGE
+# TRADES
 # -------------------------------------------------
 elif page == "Trades":
-    st.markdown("## 📋 All Trades")
-    st.markdown("---")
-
+    st.markdown("## Trades")
     st.dataframe(
         df.style
-        .applymap(
-            lambda v: "color:#00ff9c" if isinstance(v,(int,float)) and v > 0 else "color:#ff5c5c",
-            subset=["PnL"]
-        )
-        .format({"PnL":"{:.2f}", "RR":"{:.2f}"}),
+        .applymap(lambda v: "color:#00ff9c" if isinstance(v,(int,float)) and v>0 else "color:#ff5c5c", subset=["PnL"])
+        .format({"PnL":"{:.2f}","RR":"{:.2f}"}),
         use_container_width=True
     )
 
 # -------------------------------------------------
-# ANALYTICS PAGE
+# ANALYTICS
 # -------------------------------------------------
 elif page == "Analytics":
-    st.markdown("## 📉 Drawdown Analysis")
-    st.markdown("---")
+    st.markdown("## Analytics")
 
-    dd_fig = px.area(df, y="Drawdown")
-    dd_fig.update_layout(
+    st.markdown("### Drawdown")
+    dd = px.area(df, y="Drawdown")
+    dd.update_layout(
+        height=300,
         plot_bgcolor="#0e1117",
         paper_bgcolor="#0e1117",
         font_color="#c9d1d9"
     )
-    st.plotly_chart(dd_fig, use_container_width=True)
+    st.plotly_chart(dd, use_container_width=True)
 
-    st.markdown("### 📌 Pair-wise Performance")
+    st.markdown("### Pair Performance")
     pair_stats = (
         df.groupby("pair")
         .agg(
-            Trades=("PnL", "count"),
-            WinRate=("PnL", lambda x: round((x[x > 0].count() / len(x)) * 100, 2)),
-            NetPnL=("PnL", "sum"),
-            AvgRR=("RR", "mean")
+            Trades=("PnL","count"),
+            WinRate=("PnL",lambda x: round((x>0).mean()*100,2)),
+            NetPnL=("PnL","sum"),
+            AvgRR=("RR","mean")
         )
         .reset_index()
     )
