@@ -122,7 +122,7 @@ if uploaded_file is not None:
         if skipped > 0:
             st.warning(f"⚠️ Skipped {skipped} invalid rows")
 
-        st.experimental_rerun()
+        st.rerun()
 
 # -------------------------------------------------
 # ADD TRADE (MANUAL)
@@ -260,3 +260,4 @@ elif page == "Analytics":
         font_color="#c9d1d9"
     )
     st.plotly_chart(dd_fig, use_container_width=True)
+
