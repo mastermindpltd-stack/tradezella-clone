@@ -72,6 +72,18 @@ uploaded_file = st.sidebar.file_uploader(
     "Upload CSV",
     type=["csv"]
 )
+if uploaded_file is not None:
+    csv_df = pd.read_csv(uploaded_file)
+
+    st.subheader("📄 CSV Preview")
+    st.dataframe(csv_df.head(), use_container_width=True)
+
+    required_cols = {"pair","direction","entry","stoploss","takeprofit","lot"}
+
+    if not required_cols.issubset(csv_df.columns):
+        st.error(f"CSV must contain columns: {required_cols}")
+    else:
+        st.success("CSV format looks good ✅")
 
 st.sidebar.markdown("## 📘 Trade Journal")
 st.sidebar.caption("TradeZella-style analytics")
@@ -242,4 +254,5 @@ elif page == "Analytics":
         .reset_index()
     )
     st.dataframe(pair_stats, use_container_width=True)
+
 
