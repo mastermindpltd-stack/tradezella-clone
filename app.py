@@ -1,3 +1,8 @@
+import os
+
+UPLOAD_DIR = "uploads/screenshots"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -260,4 +265,5 @@ elif page == "Analytics":
         font_color="#c9d1d9"
     )
     st.plotly_chart(dd_fig, use_container_width=True)
+
 
